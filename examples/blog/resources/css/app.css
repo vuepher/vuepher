@@ -1,0 +1,97 @@
+/*
+ * Base styles.
+ *
+ * Deliberately plain: a project should be able to drop in Tailwind, UnoCSS or a
+ * component library without unpicking anything first. Only the custom properties
+ * below are load-bearing, because generated components reference them.
+ *
+ * The Vuepher npm package also ships a progress bar; import it here if you want
+ * the default styling instead of your own:
+ *
+ *   @import '@vuepher/vue3/progress.css';
+ */
+
+:root {
+  --bg: #ffffff;
+  --fg: #18181b;
+  --muted: #71717a;
+  --border: #e4e4e7;
+  --accent: #2563eb;
+  --success: #15803d;
+  --danger: #b91c1c;
+  --radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18181b;
+    --fg: #f4f4f5;
+    --muted: #a1a1aa;
+    --border: #3f3f46;
+    --accent: #60a5fa;
+    --success: #4ade80;
+    --danger: #f87171;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+}
+
+h1 {
+  font-size: 1.6rem;
+}
+h2 {
+  font-size: 1.15rem;
+}
+
+code {
+  background: color-mix(in srgb, var(--border) 40%, transparent);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.button {
+  display: inline-block;
+  margin-top: 0.75rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.button-secondary {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--border);
+}

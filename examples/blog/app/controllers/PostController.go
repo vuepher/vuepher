@@ -1,0 +1,156 @@
+package controllers
+
+import (
+	"errors"
+
+	"github.com/vuepher/vuepher"
+	"github.com/vuepher/vuepher/orm"
+
+	"blog/app/models"
+)
+
+// PostController is a resource controller for posts.
+//
+// It is registered with:
+//
+//	router.Resource("posts", &controllers.PostController{})
+//
+// Each method maps to a route:
+//
+//	Index    GET     /posts
+//	Create   GET     /posts/create
+//	Store    POST    /posts
+//	Show     GET     /posts/{id}
+//	Edit     GET     /posts/{id}/edit
+//	Update   PUT     /posts/{id}
+//	Destroy  DELETE  /posts/{id}
+type PostController struct {
+}
+
+// PostsIndexProps is the props shape of the Posts/Index page.
+//
+// Declaring it is not required — ctx.View with plain props works — but the type
+// name is what `vuepher types:generate` records for the component (TG-05), so the
+// page can write defineProps<PageProps['Posts/Index']>() and get the fields below
+// checked against this struct.
+type PostsIndexProps struct {
+	Posts *orm.Paginator[models.Post] `json:"posts"`
+}
+
+// PostsShowProps is the props shape of the Posts/Show page.
+type PostsShowProps struct {
+	Post *models.Post `json:"post"`
+}
+
+// NewPostController builds the controller.
+func NewPostController() *PostController {
+	return &PostController{}
+}
+
+// Index lists posts, newest first, paginated.
+//
+// Paginate(ctx, 15) reads the ?page= parameter from the request and returns the
+// shape the Pagination component expects, filters included in its links.
+func (c *PostController) Index(ctx *vuepher.Context) error {
+	posts, err := models.Post{}.Query().Latest().Paginate(ctx, 15)
+	if err != nil {
+		return err
+	}
+	return vuepher.View[PostsIndexProps](ctx, "Posts/Index", vuepher.Props{
+		"posts": posts,
+	})
+}
+
+// Create renders the form for a new post.
+func (c *PostController) Create(ctx *vuepher.Context) error {
+	return ctx.View("Posts/Create", vuepher.Props{})
+}
+
+// Store validates the payload and inserts a post.
+func (c *PostController) Store(ctx *vuepher.Context) error {
+	// Validate binds the request into the struct and checks its rule tags. It
+	// accepts a JSON body or a form post, so the same handler serves both.
+	var req struct {
+		Title string `json:"title" validate:"required,min=3,max=120"`
+		Body  string `json:"body" validate:"required"`
+	}
+	if err := ctx.Validate(&req); err != nil {
+		// Errors are flashed to the session and arrive on the next page as the
+		// `errors` prop, which useVuepherForm() binds to automatically.
+		return ctx.BackWithErrors(err)
+	}
+
+	post := &models.Post{Title: req.Title, Body: req.Body}
+	// A composite literal cannot open an if-statement's initialiser without
+	// parentheses, so the query is built first.
+	query := models.Post{}.Query()
+	if err := query.Create(post); err != nil {
+		return err
+	}
+
+	return ctx.RedirectRoute("post.index").With("success", "Post created.")
+}
+
+// Show renders a single post.
+func (c *PostController) Show(ctx *vuepher.Context) error {
+	post, err := models.Post{}.Query().Find(ctx.Param("id"))
+	if errors.Is(err, orm.ErrNotFound) {
+		return vuepher.NotFound("That post does not exist.")
+	}
+	if err != nil {
+		return err
+	}
+	return vuepher.View[PostsShowProps](ctx, "Posts/Show", vuepher.Props{"post": post})
+}
+
+// Edit renders the form for an existing post.
+func (c *PostController) Edit(ctx *vuepher.Context) error {
+	post, err := models.Post{}.Query().Find(ctx.Param("id"))
+	if errors.Is(err, orm.ErrNotFound) {
+		return vuepher.NotFound("That post does not exist.")
+	}
+	if err != nil {
+		return err
+	}
+	return ctx.View("Posts/Edit", vuepher.Props{"post": post})
+}
+
+// Update validates the payload and saves it.
+func (c *PostController) Update(ctx *vuepher.Context) error {
+	var req struct {
+		Title     string `json:"title" validate:"required,min=3,max=120"`
+		Body      string `json:"body" validate:"required"`
+		Published bool   `json:"published"`
+	}
+	if err := ctx.Validate(&req); err != nil {
+		return ctx.BackWithErrors(err)
+	}
+
+	post, err := models.Post{}.Query().Find(ctx.Param("id"))
+	if errors.Is(err, orm.ErrNotFound) {
+		return vuepher.NotFound("That post does not exist.")
+	}
+	if err != nil {
+		return err
+	}
+
+	post.Title = req.Title
+	post.Body = req.Body
+	post.Published = req.Published
+	saveQuery := models.Post{}.Query()
+	if err := saveQuery.Save(post); err != nil {
+		return err
+	}
+
+	return ctx.RedirectRoute("post.show", post.ID).With("success", "Post updated.")
+}
+
+// Destroy deletes a post. Because the model embeds vuepher.Model the row is
+// soft-deleted: it disappears from queries but stays recoverable.
+func (c *PostController) Destroy(ctx *vuepher.Context) error {
+	err := models.Post{}.Query().Where("id = ?", ctx.Param("id")).Delete()
+	if err != nil {
+		return err
+	}
+	return ctx.RedirectRoute("post.index").With("success", "Post deleted.")
+}

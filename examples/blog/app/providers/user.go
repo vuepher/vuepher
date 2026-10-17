@@ -1,0 +1,89 @@
+// Package providers holds the bindings that connect framework contracts to
+// application models (PRD §8).
+package providers
+
+import (
+	"context"
+	"errors"
+	"strings"
+
+	"github.com/vuepher/vuepher"
+	"github.com/vuepher/vuepher/auth"
+	"github.com/vuepher/vuepher/orm"
+
+	"blog/app/models"
+)
+
+// UserProvider implements auth.Provider over the users table.
+//
+// The guard never touches the database itself: this is the one place that knows
+// how a user is stored, which keeps the framework free of schema assumptions and
+// makes the lookup easy to swap in a test.
+type UserProvider struct {
+	app *vuepher.App
+}
+
+// NewUserProvider builds the provider.
+func NewUserProvider(app *vuepher.App) *UserProvider {
+	return &UserProvider{app: app}
+}
+
+// db returns the connection to use: the application's when booted, otherwise the
+// process default, so the provider also works in a test that never called
+// bootstrap.App.
+func (p *UserProvider) db() *orm.DB {
+	if p.app != nil && p.app.DB != nil {
+		return p.app.DB
+	}
+	return orm.Default()
+}
+
+// RetrieveByID implements auth.Provider. A missing user is reported as
+// auth.ErrUserNotFound so the guard treats an orphaned session as a signed-out
+// visitor rather than as a server error.
+func (p *UserProvider) RetrieveByID(ctx context.Context, id string) (auth.Authenticatable, error) {
+	db := p.db()
+	if db == nil {
+		return nil, errors.New("providers: no database connection; call bootstrap.App first")
+	}
+
+	user, err := orm.QueryOn[models.User](db).Context(ctx).Find(id)
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, auth.ErrUserNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// RetrieveByCredentials implements auth.Provider. Only the email is used; the
+// password is verified by the guard, which owns the hasher, so a plaintext
+// password never reaches this layer.
+func (p *UserProvider) RetrieveByCredentials(
+	ctx context.Context,
+	credentials map[string]string,
+) (auth.Authenticatable, error) {
+	db := p.db()
+	if db == nil {
+		return nil, errors.New("providers: no database connection; call bootstrap.App first")
+	}
+
+	// Email matching is case-insensitive because that is what users expect;
+	// store the normalised form so the index still applies.
+	email := strings.ToLower(strings.TrimSpace(credentials["email"]))
+	if email == "" {
+		return nil, auth.ErrUserNotFound
+	}
+
+	user, err := orm.QueryOn[models.User](db).Context(ctx).
+		Where("LOWER(email) = ?", email).
+		First()
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, auth.ErrUserNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}

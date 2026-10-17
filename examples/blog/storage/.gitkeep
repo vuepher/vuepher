@@ -1,0 +1,4 @@
+# Runtime data lives here: the sqlite database, logs, cached views and uploads.
+#
+# `.gitignore` ignores everything in this directory except this file. The
+# contents are per-environment and must never be committed.

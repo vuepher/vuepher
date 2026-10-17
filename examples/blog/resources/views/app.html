@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="{{ .VuepherLang }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ .Title }}</title>
+
+    {{/*
+        Stylesheets go in the head so the first paint is not unstyled.
+        .VuepherStyleTags and .VuepherScriptTags split .VuepherAssets into its
+        two halves; use {{ .VuepherAssets }} instead if you prefer one tag.
+
+        The CSRF token is available to the frontend as the shared prop
+        `csrf_token` (read it with usePage()), so it does not belong in a meta
+        tag.
+    */}}
+    {{ .VuepherStyleTags }}
+</head>
+<body>
+    {{/*
+        .VuepherApp is the application root: a div carrying the page object in
+        its data-page attribute. The framework builds this string so the JSON is
+        escaped exactly once, for an HTML attribute.
+
+        Do not add attributes to this element; wrap it in another element if you
+        need one.
+    */}}
+    {{ .VuepherApp }}
+
+    {{ .VuepherScriptTags }}
+</body>
+</html>

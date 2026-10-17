@@ -1,0 +1,44 @@
+{
+  "$schema": "https://vuepher.dev/schema/vuepher.json",
+  "entry": "main.go",
+  "dev": {
+    "goPort": 8080,
+    "vitePort": 5173,
+    "host": "localhost",
+    "watch": [
+      "app/**/*.go",
+      "routes/**/*.go",
+      "config/**/*.go",
+      "bootstrap/**/*.go",
+      "resources/views/**/*.html",
+      "*.go"
+    ],
+    "ignore": [
+      "storage/**",
+      "public/build/**",
+      "resources/js/types/generated/**",
+      "node_modules/**"
+    ],
+    "debounceMs": 250,
+    "reloadTimeoutMs": 2000
+  },
+  "build": {
+    "out": "build/vuepher-app",
+    "embedDir": "public/build",
+    "compress": true,
+    "ldflags": ["-s", "-w"],
+    "targets": ["linux/amd64", "linux/arm64", "darwin/arm64", "windows/amd64"]
+  },
+  "types": {
+    "source": ["app/models", "app/requests", "app/controllers"],
+    "out": "resources/js/types/generated",
+    "watch": true,
+    "check": false
+  },
+  "paths": {
+    "views": "resources/views",
+    "pages": "resources/js/Pages",
+    "stubs": "stubs",
+    "migrations": "database/migrations"
+  }
+}

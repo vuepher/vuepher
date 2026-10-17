@@ -1,0 +1,8 @@
+# Vite writes the production build here.
+#
+# This file exists so that `//go:embed all:public/build` in main.go has something
+# to match on a fresh clone, before the first `vuepher build`. Without it the
+# program would not compile.
+#
+# Do not delete it. `.gitignore` ignores everything in this directory except this
+# file.

@@ -1,0 +1,185 @@
+// Package bootstrap wires the application together.
+//
+// Everything that assembles the application lives here rather than in main, so a
+// test can build the same application without starting a server:
+//
+//	app, err := bootstrap.App(bootstrap.Options{EnvFile: ".env.testing", Embedded: embeddedFiles})
+//	server := httptest.NewServer(app)
+package bootstrap
+
+import (
+	"fmt"
+	"io/fs"
+	"os"
+
+	"github.com/vuepher/vuepher"
+	"github.com/vuepher/vuepher/auth"
+	"github.com/vuepher/vuepher/middleware"
+	"github.com/vuepher/vuepher/orm"
+
+	"blog/app/providers"
+	"blog/config"
+	"blog/database/migrations"
+	"blog/database/seeders"
+	"blog/routes"
+)
+
+// Options control how the application is built.
+type Options struct {
+	// Embedded is the asset filesystem compiled into the binary. When nil, or
+	// when the Vite dev server is running, files are read from disk instead.
+	Embedded fs.FS
+
+	// EnvFile is the configuration file to load. Defaults to ".env".
+	EnvFile string
+}
+
+// App builds a ready-to-serve application.
+func App(options ...Options) (*vuepher.App, error) {
+	var opts Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	if opts.EnvFile == "" {
+		opts.EnvFile = ".env"
+	}
+
+	cfg, err := vuepher.LoadConfig(opts.EnvFile)
+	if err != nil {
+		return nil, fmt.Errorf("vuepher: could not load configuration: %w", err)
+	}
+
+	app := vuepher.NewApp(cfg)
+
+	// Middleware order matters. Recover is outermost so it sees a panic from
+	// anything below it; Logger sits just inside so a failing request is still
+	// recorded; Session must precede ShareProps, which reads flash data and the
+	// CSRF token out of it.
+	app.Use(
+		middleware.Recover(app.Logger),
+		middleware.RequestID(),
+		middleware.Logger(middleware.LoggerOptions{
+			Logger: app.Logger,
+			Skip:   func(path string) bool { return path == "/up" },
+		}),
+		middleware.Session(app.Sessions),
+		middleware.ShareProps(),
+		middleware.CSRF(),
+	)
+
+	if err := connectDatabase(app); err != nil {
+		return nil, err
+	}
+
+	// The guard resolves users through the provider, which reads the users
+	// table through the ORM.
+	guard := auth.NewSessionGuard(providers.NewUserProvider(app))
+	app.Container.Instance("auth", guard)
+	app.Use(auth.Middleware(guard))
+
+	if err := registerRenderer(app, opts); err != nil {
+		return nil, err
+	}
+
+	routes.Web(app)
+	app.RegisterHealth("/up")
+
+	return app, nil
+}
+
+// connectDatabase opens the connection and installs it as the process default,
+// which is what makes the generated model helpers (Post{}.Query()) work without
+// threading the handle through every call site.
+func connectDatabase(app *vuepher.App) error {
+	ormConfig, err := config.Database(app)
+	if err != nil {
+		return err
+	}
+	// A sqlite database lives in a file whose directory may not exist yet.
+	if err := config.EnsureDatabaseDirectory(app); err != nil {
+		return err
+	}
+
+	db, err := orm.Connect(ormConfig)
+	if err != nil {
+		return err
+	}
+	app.DB = db
+	orm.SetDefault(db)
+	app.Container.Instance("db", db)
+	app.Container.Instance("orm", db)
+
+	// Register the migrator and seeders so `vuepher migrate` and
+	// `vuepher db:seed` can find them.
+	app.Container.Instance("migrator", migrations.Registry(db))
+	app.Container.Instance("seeders", seeders.Registry())
+
+	return nil
+}
+
+// registerRenderer installs the view renderer with the right filesystem: the
+// embedded one in a built binary, the working tree during development.
+func registerRenderer(app *vuepher.App, opts Options) error {
+	err := app.UseRenderer(vuepher.RendererOptions{
+		FS:           templateFS(app.Config, opts),
+		RootTemplate: "resources/views/app.html",
+		Title:        app.Config.App.Name,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Error pages are ordinary Vue components (VIEW-09). They are registered
+	// here so the component names live in one place rather than being repeated
+	// at every error site.
+	app.Renderer.SetErrorComponent(403, "Errors/403")
+	app.Renderer.SetErrorComponent(404, "Errors/404")
+	app.Renderer.SetErrorComponent(500, "Errors/500")
+
+	// In a built binary the frontend is embedded, so the application serves it
+	// itself: one process, one port, nothing extra to deploy (R8). During
+	// development the Vite dev server serves these files instead, and the
+	// renderer emits tags pointing at it.
+	if err := mountEmbeddedAssets(app, opts); err != nil {
+		return err
+	}
+	return nil
+}
+
+// mountEmbeddedAssets serves public/build from the embedded filesystem in
+// production, with cache headers and pre-compressed variants.
+func mountEmbeddedAssets(app *vuepher.App, opts Options) error {
+	if opts.Embedded == nil || app.Config.Vite.UseDevServer {
+		return nil
+	}
+
+	assets, err := fs.Sub(opts.Embedded, app.Config.Vite.BuildDir)
+	if err != nil {
+		return fmt.Errorf(
+			"vuepher: the embedded asset directory %s is missing. "+
+				"Build the frontend with `vuepher build`, or run `vuepher dev` for development: %w",
+			app.Config.Vite.BuildDir, err,
+		)
+	}
+
+	app.Router.Mount("/build/", vuepher.AssetHandler(vuepher.AssetOptions{
+		FS:         assets,
+		Prefix:     "/build/",
+		Immutable:  true,
+		Compressed: true,
+	}))
+	return nil
+}
+
+// templateFS decides where templates and the build manifest are read from.
+//
+// In development the working tree is read directly, so editing app.html or the
+// build manifest takes effect on the next restart without rebuilding. In
+// production everything comes from the embedded filesystem, which is what makes
+// the binary self-contained.
+func templateFS(cfg *vuepher.Config, opts Options) fs.FS {
+	if opts.Embedded != nil && !cfg.Vite.UseDevServer {
+		return opts.Embedded
+	}
+	return os.DirFS(".")
+}

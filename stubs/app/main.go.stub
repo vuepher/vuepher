@@ -1,0 +1,107 @@
+// Command [[ .ProjectName ]] is a Vuepher application.
+//
+// Development:
+//
+//	vuepher dev
+//
+// Production build (a single binary with the frontend embedded):
+//
+//	vuepher build
+package main
+
+import (
+	"embed"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"github.com/vuepher/vuepher/console"
+	"github.com/vuepher/vuepher/orm"
+
+	"[[ .Module ]]/bootstrap"
+)
+
+// embeddedFiles holds everything the production binary needs at runtime: the Vue
+// templates and the built frontend.
+//
+// The `all:` prefix is required because the Vite manifest is written under
+// public/build/.vite, and a leading dot excludes a path unless `all:` is used.
+//
+//go:embed all:resources/views all:public/build
+var embeddedFiles embed.FS
+
+func main() {
+	// Commands such as `vuepher migrate` need to see the migrations this
+	// application registers, which a standalone CLI cannot know. They therefore
+	// run here, in the application binary, and `vuepher` invokes this program
+	// with an internal flag.
+	if handled, code := runInternalCommand(); handled {
+		os.Exit(code)
+	}
+
+	app, err := bootstrap.App(bootstrap.Options{Embedded: embeddedFiles})
+	if err != nil {
+		// The logger is created inside bootstrap, so a failure before that point
+		// has to report itself.
+		slog.Error("vuepher: application boot failed", "error", err)
+		os.Exit(1)
+	}
+
+	for _, warning := range app.Config.Warnings() {
+		app.Logger.Warn("configuration", "warning", warning)
+	}
+
+	if err := app.Run(app.Config.App.URL); err != nil {
+		app.Logger.Error("vuepher: server stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+// runInternalCommand dispatches the database commands.
+//
+// It returns handled=false for a normal start, so the server runs. Only built
+// commands reach this path: `vuepher` and a container entrypoint both go through
+// it, which is why `./myapp --vuepher-internal migrate` works in production
+// without the CLI installed.
+func runInternalCommand() (bool, int) {
+	if !console.IsInternal(os.Args[1:]) {
+		return false, 0
+	}
+
+	app, err := bootstrap.App(bootstrap.Options{Embedded: embeddedFiles})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return true, 1
+	}
+
+	handled, err := console.Run(os.Args[1:], console.Context{
+		DB:       app.DB,
+		Migrator: containerValue[*orm.Migrator](app.Container, "migrator"),
+		Seeders:  containerValue[*orm.SeederRegistry](app.Container, "seeders"),
+		Routes:   app.RouteList(),
+		Stdout:   os.Stdout,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return true, 1
+	}
+	return handled, 0
+}
+
+// containerValue resolves a service from the container, returning nil rather than
+// panicking when it is absent, so a missing registration produces a clear message
+// from the command instead of a stack trace.
+func containerValue[T any](container interface {
+	Make(string) (any, error)
+}, name string) T {
+	var zero T
+	value, err := container.Make(name)
+	if err != nil {
+		return zero
+	}
+	typed, ok := value.(T)
+	if !ok {
+		return zero
+	}
+	return typed
+}

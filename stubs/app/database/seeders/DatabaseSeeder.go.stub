@@ -1,0 +1,84 @@
+package seeders
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/vuepher/vuepher/auth"
+	"github.com/vuepher/vuepher/orm"
+
+	"[[ .Module ]]/app/models"
+)
+
+// DatabaseSeeder is the entry point for `vuepher db:seed`. It creates the data a
+// local development environment needs: one account to sign in with and a handful
+// of example records.
+//
+// It is deliberately idempotent. Running `vuepher db:seed` twice must not produce
+// duplicate rows, because that is the habit people actually have.
+type DatabaseSeeder struct {
+}
+
+// Run seeds the database.
+func (DatabaseSeeder) Run(ctx context.Context, db *orm.DB) error {
+	if err := seedDemoUser(ctx, db); err != nil {
+		return err
+	}
+	return seedPosts(ctx, db)
+}
+
+// seedDemoUser creates a development account.
+func seedDemoUser(ctx context.Context, db *orm.DB) error {
+	const email = "demo@example.com"
+
+	exists, err := orm.QueryOn[models.User](db).Context(ctx).Where("email = ?", email).Exists()
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	user := &models.User{Name: "Demo User", Email: email}
+	if err := user.SetPassword("password", auth.DefaultHasher()); err != nil {
+		return err
+	}
+	if err := orm.QueryOn[models.User](db).Context(ctx).Create(user); err != nil {
+		return err
+	}
+	fmt.Println("seeded: user demo@example.com (password: password)")
+	return nil
+}
+
+// seedPosts creates a few posts to page through.
+func seedPosts(ctx context.Context, db *orm.DB) error {
+	count, err := orm.QueryOn[models.Post](db).Context(ctx).Count()
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	titles := []string{
+		"Hello, Vuepher",
+		"Rendering Vue pages from a Go controller",
+		"Validating requests with struct tags",
+		"Fluent queries without an ORM rewrite",
+		"Shipping a single binary",
+	}
+
+	posts := make([]models.Post, 0, len(titles))
+	for index, title := range titles {
+		posts = append(posts, models.Post{
+			Title:     title,
+			Body:      fmt.Sprintf("Body for post %d, seeded by DatabaseSeeder.", index+1),
+			Published: index%2 == 0,
+		})
+	}
+	if err := orm.QueryOn[models.Post](db).Context(ctx).Gorm().Create(&posts).Error; err != nil {
+		return err
+	}
+	fmt.Printf("seeded: %d posts\n", len(posts))
+	return nil
+}

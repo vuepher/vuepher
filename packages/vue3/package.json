@@ -1,0 +1,36 @@
+{
+  "name": "@vuepher/vue3",
+  "version": "0.1.0",
+  "description": "Vue 3 client for the Vuepher framework: page resolution, SPA navigation and form handling.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "progress.css", "README.md"],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./progress.css": "./progress.css"
+  },
+  "keywords": ["vuepher", "vue", "inertia", "golang", "go", "full-stack"],
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vite-plugin-dts": "^4.5.0",
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.2.0"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  }
+}

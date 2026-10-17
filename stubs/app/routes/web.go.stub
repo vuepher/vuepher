@@ -1,0 +1,32 @@
+// Package routes holds the application's route definitions.
+//
+// Routes are Go function calls rather than files discovered by convention or a
+// magic string, so navigation to a route definition works in any editor and a
+// broken handler is a compile error.
+package routes
+
+import (
+	"github.com/vuepher/vuepher"
+
+	"[[ .Module ]]/app/controllers"
+)
+
+// Web registers the application's web routes.
+//
+// Route resources follow the Laravel convention: a controller implements the
+// actions it supports and router.Resource attaches only those.
+//
+//	vuepher make:controller PostController --resource
+//	vuepher make:model Post -m
+//
+// then register it:
+//
+//	router.Resource("posts", &controllers.PostController{})
+func Web(app *vuepher.App) {
+	app.Get("/", (&controllers.HomeController{}).Index).Name("home")
+
+	// A demonstration of the resource route convention. Replace it with your own
+	// controllers; the Post controller and model were generated as a starting
+	// point and can be deleted.
+	app.Resource("posts", &controllers.PostController{})
+}
